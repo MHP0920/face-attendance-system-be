@@ -224,7 +224,7 @@ def check_file(file: UploadFile = File(...)):
     for chunk in file.file:
         file_size += len(chunk)
         if file_size > MAX_FILE_SIZE:
-            raise HTTPException(status_code=413, detail="File size exceeds 2MB limit")
+            raise HTTPException(status_code=413, detail="File size exceeds 10MB limit")
     file.file.seek(0)  # Reset file pointer after reading
     file.filename = secure_filename(file.filename)
     return file
@@ -278,6 +278,11 @@ attendance_api = APIRouter(
 create_api = APIRouter(
     prefix="/create",
     tags=["create"],
+)
+
+user_api = APIRouter(
+    prefix="/user",
+    tags=["user"],
 )
 
 # -------------------------------------ATTENDANCE-------------------------------------
@@ -388,6 +393,14 @@ def create_user(
         media_type="application/json"
     )
     
+# -------------------------------------USER-------------------------------------
+
+@user_api.get("/all", response_model=list[UserinDB])
+def get_all_users():
+    return [
+        UserinDB(**doc)
+        for doc in users_col.find({}, {"_id": 0})
+    ]
 
 # -------------------------------------ROUTES-------------------------------------
 
@@ -402,6 +415,7 @@ if os.environ['PROD'] == 'DEV':
 
 app.include_router(attendance_api)
 app.include_router(create_api)
+app.include_router(user_api)
 
 # -------------------------------------MAIN-------------------------------------
 if __name__ == "__main__":
