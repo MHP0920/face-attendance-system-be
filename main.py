@@ -402,6 +402,10 @@ def get_all_users():
         for doc in users_col.find({}, {"_id": 0})
     ]
 
+@user_api.get("/{uuid}", response_model=UserinDB)
+def get_user(uuid: str = Depends(check_uuid)):
+    return UserinDB(**users_col.find_one({"uuid": uuid}, {"_id": 0}))
+
 # -------------------------------------ROUTES-------------------------------------
 
 if os.environ['PROD'] == 'DEV':
