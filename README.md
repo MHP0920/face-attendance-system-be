@@ -30,7 +30,8 @@ python main.py
 - [x] Query UUID
 - [x] Query range
 - [x] Submit attendence
-- [ ] Exception handler
+- [x] Exception handler
+- [ ] Auth
 
 > [!WARNING]  
 > This API is currently in the development stage. Expect bugs.
