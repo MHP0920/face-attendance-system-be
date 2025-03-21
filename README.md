@@ -20,6 +20,8 @@ python main.py
 - `--utc <int>`: Set UTC offset from -12 to 14 (default: 7).
 - `--port <int>`: Set the port (default: 8000).
 - `--host <str>`: Set the host (default: 0.0.0.0).
+- `--authkey <str>`: Authentication key, default is a random 32-byte key
+- `--expire <int>`: Access token expiration time in minutes, default is 30 
 
 ## Environments:
 - **MONGO_URI**: The URI for the database.
