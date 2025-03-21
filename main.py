@@ -21,17 +21,28 @@ from fastapi import (
     HTTPException, 
     Depends,
     APIRouter,
-    Response
+    Response,
+    Body,
+    Request,
+)
+from fastapi.exceptions import (
+    RequestValidationError,
+    ResponseValidationError
 )
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import (
+    BaseModel,
+    field_validator,
+    Field
+)
 from werkzeug.utils import secure_filename
 from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.collection import Collection
 from typing_extensions import (
     Literal,
-    Union
+    Union,
+    List
 )
 import re
 import uuid
@@ -47,6 +58,8 @@ import uvicorn
 import argparse
 from pytz import FixedOffset
 from base64 import b64encode
+import secrets
+import jwt
 
 # Default timezone is Asia/Ho_Chi_Minh
 
@@ -54,6 +67,21 @@ from base64 import b64encode
 
 def generate_uuid():
     return str(uuid.uuid4())
+
+def key_gen(length: int = 32):
+    return secrets.token_bytes(length).hex()
+
+# -------------------------------------CONSTANTS-------------------------------------
+
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
+JWT_SECRET = key_gen()
+JWT_ALGORITHM = "HS256"
+SCOPES = {
+    "attendance": "Access attendance-related APIs",
+    "create": "Access user creation APIs",
+    "user": "Access user-related APIs",
+    "general": "Access general APIs (No routers)"
+}
 
 # -------------------------------------LOGGING-------------------------------------
 
@@ -116,9 +144,29 @@ parser.add_argument(
     help="Host, default is 0.0.0.0"
 )
 
+parser.add_argument(
+    "--authkey",
+    type=str,
+    default=key_gen(),
+    help="Authentication key, default is a random 32-byte key"
+)
+
+parser.add_argument(
+    "--expire",
+    type=int,
+    default=30,
+    help="Access token expiration time in minutes, default is 30"
+)
+
 args = parser.parse_args()
 
 os.environ['PROD'] = "PROD" if args.prod else "DEV"
+
+logging.info(f"Production mode: {os.environ['PROD']}")
+logging.info(f"Secret key for authentication: {args.authkey}")
+
+ACCESS_TOKEN_EXPIRE_MINUTES = args.expire
+AUTHKEY = args.authkey
 
 if -12 <= args.utc <= 14:
     server_timezone = FixedOffset(args.utc * 60)
@@ -176,13 +224,12 @@ app = FastAPI(
     #debug=True if os.environ['PROD'] == 'DEV' else False,
 )
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
-
 if os.environ['PROD'] == 'DEV':
     mod_value = default_value_dict.copy()
     mod_value["users"]["created_at"] = mod_value["users"]["created_at"].isoformat()
     mod_value["users"]["updated_at"] = mod_value["users"]["updated_at"].isoformat()
     mod_value["history"]["added_at"] = mod_value["history"]["added_at"].isoformat()
+    mod_value["history"]["b64_image"] = mod_value["history"]["b64_image"].decode("utf-8")
     del mod_value["users"]["_id"]
     del mod_value["history"]["_id"]
 
@@ -258,8 +305,29 @@ class HistoryinDB(BaseModel):
     added_at: datetime
     b64_image: str | None
 
+class TokenDict(BaseModel):
+    sub: Literal["authenticated"]
+    scopes: List[str] = Field(..., description="List of allowed scopes")
+
+    @field_validator("scopes", mode="before")
+    @classmethod
+    def check_scopes(cls, values):
+        if not isinstance(values, list):
+            raise ValueError("Scopes must be a list")
+        
+        invalid_scopes = [scope for scope in values if scope not in SCOPES.keys()]
+        if invalid_scopes:
+            raise ValueError(f"Invalid scopes: {invalid_scopes}. Allowed scopes: {list(SCOPES.keys())}")
+        
+        return values
 # -------------------------------------AUTH-------------------------------------
 
+def create_access_token(data: TokenDict):
+    raw_data = data.model_dump()
+    expire = datetime.now(server_timezone) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    raw_data["exp"] = expire
+    encoded_jwt = jwt.encode(raw_data, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return encoded_jwt
 
 # -------------------------------------ROUTES-------------------------------------
 
@@ -286,6 +354,55 @@ user_api = APIRouter(
     prefix="/user",
     tags=["user"],
 )
+
+auth_api = APIRouter(
+    prefix="/auth",
+    tags=["auth"],
+)
+
+# -------------------------------------EXCEPTION HANDLER-------------------------------------
+
+def value_error_handler(request: Request, exc: ValueError):
+    return Response(
+        status_code=400,
+        content=json.dumps({"detail": str(exc), "type": "ValueError"}),
+        media_type="application/json"
+    )
+
+def http_error_handler(request: Request, exc: HTTPException):
+    return Response(
+        status_code=exc.status_code,
+        content=json.dumps({"detail": exc.detail, "type": "HTTPException"}),
+        media_type="application/json"
+    )
+
+def general_error_handler(request: Request, exc: Exception):
+    return Response(
+        status_code=500,
+        content=json.dumps({"detail": str(exc), "type": "Exception"}),
+        media_type="application/json"
+    )
+
+def request_validation_error_handler(request: Request, exc: RequestValidationError):
+    return Response(
+        status_code=400,
+        content=json.dumps({"detail": exc.errors(), "type": "RequestValidationError"}),
+        media_type="application/json"
+    )
+
+def response_validation_error_handler(request: Request, exc: ResponseValidationError):
+    return Response(
+        status_code=400,
+        content=json.dumps({"detail": exc.errors(), "type": "ResponseValidationError"}),
+        media_type="application/json"
+    )
+
+
+app.add_exception_handler(RequestValidationError, request_validation_error_handler)
+app.add_exception_handler(ResponseValidationError, response_validation_error_handler)
+app.add_exception_handler(Exception, general_error_handler)
+app.add_exception_handler(HTTPException, http_error_handler)
+app.add_exception_handler(ValueError, value_error_handler)
 
 # -------------------------------------ATTENDANCE-------------------------------------
 
@@ -408,6 +525,23 @@ def get_all_users():
 def get_user(uuid: str = Depends(check_uuid)):
     return UserinDB(**users_col.find_one({"uuid": uuid}, {"_id": 0}))
 
+# -------------------------------------AUTH-------------------------------------
+
+@auth_api.post("/token", summary="Generate JWT Token", description="Authenticate using only the password and receive a JWT token.")
+def login(password: str = Body(..., embed=True)):
+    """
+    Authenticate using only the password and return a JWT token.
+    """
+    if password != AUTHKEY:
+        raise HTTPException(status_code=401, detail="Invalid password")
+    access_token = create_access_token(
+        data=TokenDict(
+            sub="authenticated",
+            scopes=list(SCOPES.keys())
+        )
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
 # -------------------------------------ROUTES-------------------------------------
 
 if os.environ['PROD'] == 'DEV':
@@ -422,6 +556,7 @@ if os.environ['PROD'] == 'DEV':
 app.include_router(attendance_api)
 app.include_router(create_api)
 app.include_router(user_api)
+app.include_router(auth_api)
 
 # -------------------------------------MAIN-------------------------------------
 if __name__ == "__main__":

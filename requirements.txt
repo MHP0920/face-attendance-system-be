@@ -3,3 +3,4 @@ pydantic
 flask
 pymongo
 pytz
+pyjwt
