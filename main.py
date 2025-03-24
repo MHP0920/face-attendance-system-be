@@ -217,7 +217,7 @@ logging.info("Database initialized - Default by now")
 app = FastAPI(
     title="Face Recognition API",
     description="Face Recognition API",
-    version="0.1.0",
+    version="0.0.1UDB1",
     docs_url="/docs" if os.environ['PROD'] == 'DEV' else None,
     #redoc_url=None if os.environ['PROD'] == 'DEV' else None,
     #openapi_url=None if os.environ['PROD'] == 'DEV' else None,
@@ -447,7 +447,16 @@ def get_attendance(
     if uuid:
         uuid = check_uuid(uuid)
         if not start_date and not end_date:
-            return UserinDB(**users_col.find_one({"uuid": uuid}, {"_id": 0}))
+            return [
+                HistoryinDB(
+                    **{
+                        **doc,
+                        "b64_image": b64encode(doc["b64_image"]).decode("utf-8")
+                        if return_image else None
+                    }
+                )
+                for doc in history_col.find({"uuid": uuid}, {"_id": 0})
+            ]
         elif start_date and end_date:
             query = {
                 "uuid": uuid,

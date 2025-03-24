@@ -35,5 +35,8 @@ python main.py
 - [x] Exception handler
 - [ ] Auth
 
+# UPDATES
+For more update information, check the [Update log](/UPDATELOG.md)
+
 > [!WARNING]  
 > This API is currently in the development stage. Expect bugs.
