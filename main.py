@@ -217,7 +217,7 @@ logging.info("Database initialized - Default by now")
 app = FastAPI(
     title="Face Recognition API",
     description="Face Recognition API",
-    version="0.0.1UDB1",
+    version="0.0.1UDB1TF1",
     docs_url="/docs" if os.environ['PROD'] == 'DEV' else None,
     #redoc_url=None if os.environ['PROD'] == 'DEV' else None,
     #openapi_url=None if os.environ['PROD'] == 'DEV' else None,
@@ -285,7 +285,7 @@ def check_full_name(full_name: str):
     
     Raises a ValueError if the name contains invalid characters.
     """
-    vietnamese_pattern = r"^[A-Za-zÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂÂÊÔưăâêô\s]+$"
+    vietnamese_pattern = r"^[AÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬB-ZĐÉÈẺẼẸÊẾỀỂỄỆGHIÍÌỈĨỊKLMNOÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢPQRSTUÚÙỦŨỤƯỨỪỬỮỰVXYÝỲỶỸỴaáàảãạăắằẳẵặâấầẩẫậb-zđéèẻẽẹêếềểễệghiíìỉĩịklmnoóòỏõọôốồổỗộơớờởỡợpqrstuúùủũụưứừửữựvxyýỳỷỹỵ\s]+$"
 
     if not re.fullmatch(vietnamese_pattern, full_name):
         raise ValueError(f"Invalid name: '{full_name}'. Name can only contain letters and spaces.")
